@@ -13,11 +13,13 @@ logger = logging.getLogger(__name__)
 
 # Configure text splitter
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200
+    chunk_size=2000,
+    chunk_overlap=400
 )
 
 # Load embeddings model
+# BAAI/bge-large-en-v1.5
+# sentence-transformers/all-MiniLM-L6-v2
 embedding_model = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2",
     model_kwargs={'device': 'cpu'},
@@ -135,16 +137,19 @@ def process_minio_document(bucket, object_path):
         raise
 
 def list_documents(index_name=None):
-    """List indexed documents"""
+    """List indexed documents and documents in MinIO"""
     try:
+        # Part 1: Get documents from Elasticsearch
+        es_docs = []
         if index_name:
             indexes = [index_name]
         else:
             # Get all document indices
-            indices_response = es_client.indices.get(index="documents_*")
-            indexes = list(indices_response.keys())
-
-        all_docs = []
+            try:
+                indices_response = es_client.indices.get(index="documents_*")
+                indexes = list(indices_response.keys())
+            except:
+                indexes = []
 
         for idx in indexes:
             try:
@@ -171,16 +176,47 @@ def list_documents(index_name=None):
                             "source": metadata.get("source", "Unknown"),
                             "description": metadata.get("description", ""),
                             "index": idx,
-                            "chunk_count": 1
+                            "chunk_count": 1,
+                            "indexed": True
                         }
                     else:
                         unique_files[file_id]["chunk_count"] += 1
 
-                all_docs.extend(list(unique_files.values()))
+                es_docs.extend(list(unique_files.values()))
 
             except Exception as e:
                 logger.error(f"Error listing documents from index {idx}: {e}")
 
+        # Part 2: Get documents from MinIO
+        minio_docs = []
+        try:
+            # List all documents in raw-ingestion-zone
+            if minio_client.bucket_exists("raw-ingestion-zone"):
+                objects = minio_client.list_objects("raw-ingestion-zone", prefix="documents/", recursive=True)
+
+                # Create a set of already indexed files
+                indexed_files = {doc["filename"] for doc in es_docs}
+
+                for obj in objects:
+                    filename = os.path.basename(obj.object_name)
+                    # If not already indexed, add to the list
+                    if filename not in indexed_files:
+                        minio_docs.append({
+                            "id": filename,
+                            "filename": filename,
+                            "source": "minio/raw-ingestion-zone",
+                            "description": "Document in MinIO (not indexed)",
+                            "index": None,
+                            "chunk_count": 0,
+                            "indexed": False,
+                            "size": obj.size,
+                            "last_modified": obj.last_modified
+                        })
+        except Exception as e:
+            logger.error(f"Error listing documents from MinIO: {e}")
+
+        # Combine both lists
+        all_docs = es_docs + minio_docs
         return all_docs
 
     except Exception as e:

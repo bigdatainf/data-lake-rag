@@ -9,6 +9,7 @@ minio==7.2.3
 python-dotenv==1.0.1
 pydantic==2.5.2
 torch==2.2.0
+pypdf
 pyarrow==14.0.1
 python-multipart==0.0.7
 pandas==2.2.0

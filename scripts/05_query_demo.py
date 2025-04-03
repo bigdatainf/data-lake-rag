@@ -47,7 +47,8 @@ def query_rag_service():
         example_queries = [
             "How to troubleshoot product issues",
             "What are the key market trends",
-            "Customer complaints about packaging"
+            "Customer complaints about packaging",
+            "How to make QA over an existing KG"
         ]
 
         # Execute each query

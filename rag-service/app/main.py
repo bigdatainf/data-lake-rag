@@ -96,14 +96,24 @@ async def fetch_from_minio(
         raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")
 
 @app.get("/documents/list")
-async def list_documents(index_name: Optional[str] = None):
-    """List indexed documents"""
+async def list_documents(
+        index_name: Optional[str] = None,
+        indexed_only: Optional[bool] = False
+):
+    """List documents from Elasticsearch and MinIO"""
     try:
-        documents = document_manager.list_documents(index_name)
+        documents = document_manager.list_documents()  # Changed from list_all_documents to list_documents
+
+        # Apply filters
+        if index_name:
+            documents = [doc for doc in documents if doc.get("index") == index_name]
+
+        if indexed_only:
+            documents = [doc for doc in documents if doc.get("indexed", False)]
+
         return {"documents": documents}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
-
 @app.post("/retrieval/query")
 async def query_documents(request: QueryRequest):
     """Query documents using RAG"""
